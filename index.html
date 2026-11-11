@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sudoku Race</title>
+<style>
+  :root { --bg: #161a30; --panel: #22274a; --line: #ffffff1c; --paper: #fbf7ee; --ink: #262a4a; --dim: #9aa0c8; --gold: #ffcf5a; --red: #ff5d5d; --green: #5ad19a; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); }
+  body { color: #eef0ff; font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; user-select: none; -webkit-user-select: none; }
+  #app { height: 100%; max-width: 1100px; margin: 0 auto; box-sizing: border-box; display: grid; gap: 8px;
+         padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+         grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; grid-template-areas: "top" "rivals" "board" "hint" "pad" "net"; }
+  header { grid-area: top; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  header h1 { margin: 0; font-size: 19px; white-space: nowrap; } header h1 b { color: var(--gold); }
+  .chip { padding: 4px 10px; border-radius: 999px; background: var(--panel); font: 700 13px system-ui, sans-serif; white-space: nowrap; color: var(--dim); }
+  #clock { margin-left: auto; font: 800 20px ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  #miss { color: var(--red); font-weight: 800; white-space: nowrap; }
+  #rivals { grid-area: rivals; display: flex; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; min-height: 0; }
+  .rv { flex: 0 0 auto; width: 84px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 5px 5px; border-radius: 12px; background: var(--panel); position: relative; }
+  .rv.me { box-shadow: inset 0 0 0 2px var(--gold); }
+  .rv canvas { width: 40px; height: 40px; display: block; }
+  .rv b { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv .bar { width: 100%; height: 6px; border-radius: 3px; background: #ffffff14; overflow: hidden; } .rv .bar u { display: block; height: 100%; border-radius: 3px; transition: width .35s; }
+  .rv span { font: 700 11px ui-monospace, Consolas, monospace; color: var(--dim); white-space: nowrap; } .rv.done span { color: var(--green); }
+  .rv i { position: absolute; top: 4px; left: 6px; font: 800 11px system-ui, sans-serif; font-style: normal; color: var(--dim); }
+  #boardWrap { grid-area: board; position: relative; min-height: 0; }
+  #board { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; cursor: pointer; }
+  #hint { grid-area: hint; text-align: center; font-weight: 700; font-size: 13px; color: var(--gold); transition: opacity .6s; min-height: 18px; }
+  #banner { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); max-width: calc(100% - 16px); box-sizing: border-box; padding: 6px 12px; border-radius: 10px; text-align: center; font-weight: 700; font-size: 13px; pointer-events: none; background: var(--green); color: #0d2a1d; box-shadow: 0 4px 14px #0006; }
+  #banner:empty { display: none; }
+  #pad { grid-area: pad; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #pad button { position: relative; min-height: 56px; border: 0; border-radius: 12px; background: var(--panel); color: #fff; font: 800 22px system-ui, sans-serif; cursor: pointer; box-shadow: 0 3px 0 #0006; touch-action: manipulation; }
+  #pad button:active { transform: translateY(2px); box-shadow: 0 1px 0 #0006; }
+  #pad button sup { position: absolute; top: 4px; right: 7px; font-size: 10px; color: var(--dim); }
+  #pad button.used { opacity: .3; } #pad button.tool { font-size: 13px; line-height: 1.15; } #pad button.on { background: var(--gold); color: var(--ink); }
+  #pad button.warn { background: var(--red); }
+  #net { grid-area: net; font-size: 12px; color: var(--dim); text-align: center; white-space: nowrap; }
+  @media (min-aspect-ratio: 1/1) and (min-width: 700px) {
+    #app { grid-template-columns: minmax(0, 1fr) minmax(250px, 320px); grid-template-rows: auto minmax(0, 1fr) auto auto auto; grid-template-areas: "top top" "board rivals" "board hint" "board pad" "net net"; }
+    #rivals { flex-direction: column; overflow-x: hidden; overflow-y: auto; }
+    .rv { width: 100%; flex-direction: row; gap: 10px; padding: 5px 10px; align-items: center; }
+    .rv canvas { width: 40px; height: 40px; } .rv .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .rv b { font-size: 14px; } .rv span { font-size: 12px; } .rv i { position: static; order: -1; width: 16px; font-size: 13px; }
+    #pad button { min-height: 46px; }
+  }
+  .rv .info { display: contents; }
+  @media (min-aspect-ratio: 1/1) and (min-width: 700px) { .rv .info { display: flex; } }
+  #over { position: fixed; inset: 0; display: grid; place-items: center; background: #0c0e1cb8; z-index: 5; }
+  #over[hidden] { display: none; }
+  .card { width: min(380px, calc(100vw - 32px)); max-height: 88vh; overflow: auto; padding: 20px; border-radius: 18px; background: var(--panel); border: 1px solid var(--line); text-align: center; box-sizing: border-box; box-shadow: 0 16px 50px #0008; }
+  .card h2 { margin: 0 0 2px; font-size: 26px; color: var(--gold); }
+  .card p { margin: 4px 0; color: var(--dim); }
+  .card h3 { margin: 14px 0 4px; font-size: 12px; color: var(--green); text-align: left; text-transform: uppercase; letter-spacing: .06em; }
+  .card ol { text-align: left; margin: 0; padding-left: 24px; font-size: 14px; } .card li { padding: 1px 0; } .card li span { float: right; font-family: ui-monospace, Consolas, monospace; color: var(--dim); }
+  .card li i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .seg { display: flex; gap: 6px; margin-top: 6px; } .seg button { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff0d; color: #fff; font: 700 14px system-ui, sans-serif; cursor: pointer; }
+  .seg button.on { background: var(--gold); color: var(--ink); border-color: var(--gold); }
+  button.go { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; background: var(--green); color: #0d2a1d; font: 800 17px system-ui, sans-serif; cursor: pointer; }
+  .card small { display: block; margin-top: 8px; color: var(--dim); }
+</style>
+<script src="https://cdn.multiplayeragent.com/sdk/mp.global.js"></script>
+</head>
+<body>
+<div id="app">
+  <header><h1>Sudoku <b>Race</b></h1><span class="chip" id="diff">Easy · Race</span><span id="miss"></span><span id="clock">0:00</span></header>
+  <div id="rivals"></div>
+  <div id="boardWrap"><canvas id="board"></canvas><div id="banner"></div></div>
+  <div id="hint"></div>
+  <div id="pad"></div>
+  <div id="net">Connecting…</div>
+</div>
+<div id="over" hidden><div class="card">
+  <h2 id="overTitle">Race over</h2>
+  <p id="overText"></p>
+  <h3 id="ranksTitle">This race</h3><ol id="ranks"></ol>
+  <div id="boardBox"><h3 id="boardTitle">Fastest races</h3><ol id="top"><li>Loading…</li></ol></div>
+  <h3>Next puzzle</h3>
+  <div class="seg" id="pickDiff"><button data-d="easy">Easy</button><button data-d="medium">Medium</button><button data-d="hard">Hard</button></div>
+  <div class="seg" id="pickMode"><button data-m="race">🏁 Race</button><button data-m="coop">🤝 Co-op</button></div>
+  <button class="go" id="again">Play again</button>
+  <small id="nextIn"></small>
+</div></div>
+<script>
+/* ═══ SUDOKU RACE · a Multiplayer Agent starter ═════════════════════════════════════════
+ * Everyone gets the same sudoku. First to fill it wins. Versus, 1–8; bot racers fill seats.
+ *
+ * WHERE THINGS ARE (search for the "── " headers):
+ *   CONFIG ........ clue counts per difficulty, mistake penalty, bot speeds, timers
+ *   CONNECTION .... MP_CONNECT, joining, the offline room, who is host, live ops
+ *   SUDOKU ........ the seeded generator (one solution, checked by a solver)
+ *   RACE (HOST) ... rounds, results, the co-op grid, the end of a race
+ *   BOTS .......... race bots (their progress comes from timestamps) and co-op bots
+ *   ME ............ my grid, digits and pencil marks, mistakes, my progress for others
+ *   DRAW .......... the board: highlights, digits, pencil marks, flashes, confetti
+ *   HUD & CARD .... clock, rivals' cards with their heatmaps, results, leaderboard, sound
+ *   INPUT ......... tap/click a square, the number pad, keyboard
+ *   MAIN LOOP ..... frame(), heartbeat, start-up
+ *
+ * HOW THE MULTIPLAYER WORKS (a relay room: no server code):
+ *   - The HOST is the lowest sessionId among live players (heartbeat `hb` seen in the last
+ *     3s), worked out every frame. Only the host writes the shared fields:
+ *       `race`  {id, v, phase, mode, diff, seed, pen, startAt, capAt, endsAt, m, doneMs, res, next}
+ *               one JSON field; `v` only goes up. `res` = the results so far.
+ *       `bots`  {r, v, list}: the bot racers (start time, solve time, mistakes) or co-op bots.
+ *       `grid`  {id, v, s, o}: co-op only, the one shared grid (digits) and who placed each.
+ *   - The puzzle comes from `seed` + `diff` through a seeded PRNG, so every client builds the
+ *     same grid and knows its solution without anything more in state.
+ *   - RACE: each player solves its OWN copy and writes its OWN `prog` (round, which squares
+ *     are filled but not the digits, percent, mistakes, finish time) ~4 times a second.
+ *     Rivals see that as a progress bar and a heatmap. The host copies finish times into
+ *     `race.res` and ends the race when every racer is done (or gave up).
+ *   - CO-OP: everyone fills the host's `grid`. A digit is an intent "put" {r, i, d}; it shows
+ *     at once on your screen, the host checks it and writes it (a wrong one adds time for
+ *     the whole team). Your selected square is in `prog` too, so the team sees it.
+ *   - Other intents: "pick" {diff, mode} (next puzzle), "again" {}, "giveup" {} (co-op).
+ *     Event "miss" {i, by} is only for the red flash when someone else misses.
+ *   - Bots: race bots' progress is worked out from timestamps, so a new host just carries on.
+ *   - Leaderboards "fastest-easy" / "-medium" / "-hard": race time incl. penalties, stored as
+ *     36000000 - ms (boards keep the highest score), top 10 on the results card.
+ *   - Live ops (no code): live config `mistakeSec` sets the penalty from the next puzzle.
+ *   - ?attract plays offline with bots only (the preview video is recorded from it).
+ */
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────────────
+const CONFIG = {
+  seats: 4,               // bots fill a race up to this many racers
+  coopSeats: 3,           // ... and a co-op grid up to this many solvers
+  countdownMs: 3000,      // 3-2-1 before the grid shows
+  mistakeSec: 10,         // seconds a wrong digit adds to your time (live config: mistakeSec)
+  resultsMs: 30000,       // the results card shows this long, then the next puzzle starts
+  givens: { easy: 40, medium: 32, hard: 26 },   // clues left in the grid (fewer = harder)
+  capMin: { easy: 20, medium: 30, hard: 45 },   // a puzzle ends after this many minutes regardless
+  botReadMs: [1500, 6000],                      // a race bot looks at the grid this long before its first digit
+  botSec: { easy: [170, 380], medium: [330, 640], hard: [540, 1020] }, // seconds a race bot takes to solve
+  botMistakes: [0, 3],    // a race bot makes this many mistakes (min, max)
+  coopBotSec: { easy: [4, 9], medium: [6, 12], hard: [8, 16] }, // seconds between a co-op bot's digits
+  coopBotMistake: 0.05,   // chance a co-op bot's digit is wrong
+  progressMs: 250,        // my progress goes out at most this often
+  hintMs: 9000,           // the how-to-play hint shows this long at the start of a puzzle
+  board: "fastest",       // leaderboard prefix: fastest-easy, fastest-medium, fastest-hard
+};
+const DIFFS = ["easy", "medium", "hard"], DIFF_NAMES = { easy: "Easy", medium: "Medium", hard: "Hard" };
+const BOT_NAMES = ["Ada", "Kenji", "Nina", "Otto", "Priya", "Rafa", "Suki", "Theo"];
+const COLORS = ["#4dabf7", "#ff6b6b", "#ffd43b", "#b197fc", "#ff8fc7", "#38d9a9", "#ff922b", "#748ffc"];
+const LETTERS = "ABCDEFGH"; // a co-op square remembers its placer as the letter of their color
+const BIG = 36000000;      // leaderboards keep the highest score: we store BIG - ms
+
+// ── CONNECTION ──────────────────────────────────────────────────────────────────────
+// The builder fills these in for this game. Downloaded from GitHub? Put your own pk_ key here.
+const MP_CONNECT = {
+  key: 'pk_REPLACE_ME',
+  room: 'sudoku-race',
+  endpoint: 'wss://live.multiplayeragent.com',
+  apiUrl: 'https://api.multiplayeragent.com',
+};
+const ATTRACT = new URLSearchParams(location.search).has("attract");
+
+/** Same shape as the SDK client, kept in this tab: offline play and ?attract. */
+function localRoom() {
+  const id = "local", state = { entities: { players: { [id]: {} } }, shared: {} }, subs = [];
+  let queued = false;
+  const emit = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; subs.forEach((f) => f(state)); }); } };
+  const put = (o, k, v) => { if (typeof k === "object") Object.assign(o, k); else o[k] = v; emit(); };
+  return {
+    sessionId: id, state, offline: true, live: { config: {}, active: [] },
+    me: { set: (k, v) => put(state.entities.players[id], k, v) },
+    setShared: (k, v) => put(state.shared, k, v),
+    onState: (f) => { subs.push(f); f(state); }, onJoin() {}, onLeave() {}, on() {}, send() {}, onLive() {},
+    onDisconnect() {}, onReconnect() {}, leave: async () => {},
+  };
+}
+async function connect() {
+  if (ATTRACT || typeof MP === "undefined") return localRoom();
+  try {
+    const mp = await Promise.race([MP.join({ ...MP_CONNECT }), new Promise((_, no) => setTimeout(() => no(new Error("timed out")), 10000))]);
+    window.mp = mp; // the builder calls window.mp.leave() when the page closes
+    return mp;
+  } catch (e) {
+    console.warn("Playing offline:", e && e.message);
+    return localRoom();
+  }
+}
+const parse = (v, fb) => { if (typeof v !== "string") return fb; try { return JSON.parse(v); } catch { return fb; } };
+const memo = new Map();
+/** A shared JSON field, parsed once per change (read-only: never mutate what this returns). */
+function shared(key, fallback) {
+  const raw = S.shared[key], m = memo.get(key);
+  if (m && m.raw === raw) return m.v;
+  const v = parse(raw, fallback); memo.set(key, { raw, v }); return v;
+}
+let net = null, S = { entities: { players: {} }, shared: {} };
+const seenHb = new Map(); // sessionId -> { hb, at } on OUR clock
+/** Players whose heartbeat moved in the last 3s (plus us), sorted by sessionId. */
+function livePlayers() {
+  const now = performance.now(), out = [];
+  for (const [id, p] of Object.entries(S.entities.players || {})) {
+    const s = seenHb.get(id);
+    if (!s || s.hb !== p.hb) seenHb.set(id, { hb: p.hb, at: now });
+    if (id === net.sessionId || now - seenHb.get(id).at < 3000) out.push(id);
+  }
+  return out.sort();
+}
+let wakeHold = 0, lastFrameAt = 0; // a tab whose frames stopped (frozen, or in the background) doesn't act as host, nor for 700ms after it wakes (see frame())
+const isHost = () => livePlayers()[0] === net.sessionId && performance.now() >= wakeHold && !(lastFrameAt && performance.now() - lastFrameAt > 1000);
+const liveConfig = () => (net && net.live && net.live.config) || {};
+
+// ── SUDOKU ──────────────────────────────────────────────────────────────────────────
+// A grid is 81 numbers, row by row: 0 = empty, 1–9 = a digit.
+function mulberry32(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function shuffle(arr, rnd) { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
+const ROW = (i) => Math.floor(i / 9), COL = (i) => i % 9, BOX = (i) => Math.floor(ROW(i) / 3) * 3 + Math.floor(COL(i) / 3);
+const UNITS = []; // the 27 rows, columns and boxes, each a list of 9 squares
+for (let k = 0; k < 9; k++) {
+  UNITS.push([...Array(9)].map((_, j) => k * 9 + j), [...Array(9)].map((_, j) => j * 9 + k));
+  UNITS.push([...Array(9)].map((_, j) => (Math.floor(k / 3) * 3 + Math.floor(j / 3)) * 9 + (k % 3) * 3 + (j % 3)));
+}
+const UNITS_OF = [...Array(81)].map((_, i) => UNITS.filter((u) => u.includes(i)));
+const PEERS = [...Array(81)].map((_, i) => [...new Set(UNITS_OF[i].flat())].filter((j) => j !== i));
+const popcount = (m) => { let n = 0; while (m) { m &= m - 1; n++; } return n; };
+/** Digits that could go in square i (bit d set = digit d fits). */
+function candidates(a, i) { let m = 0x3fe; for (const j of PEERS[i]) m &= ~(1 << a[j]); return m; }
+/** Fill the empty squares of a by backtracking, fewest options first. rnd shuffles the digit order
+ *  (null = fixed). Stops after `limit` solutions; returns how many it found and the first one. */
+function search(a, rnd, limit) {
+  let found = 0, first = null;
+  (function go() {
+    let best = -1, bestM = 0, bestN = 10;
+    for (let i = 0; i < 81; i++) if (!a[i]) { const m = candidates(a, i), n = popcount(m); if (n < bestN) { best = i; bestM = m; bestN = n; if (n < 2) break; } }
+    if (best < 0) { found++; if (!first) first = a.slice(); return; }
+    const ds = []; for (let d = 1; d <= 9; d++) if (bestM & (1 << d)) ds.push(d);
+    if (rnd) shuffle(ds, rnd);
+    for (const d of ds) { a[best] = d; go(); a[best] = 0; if (found >= limit) return; }
+  })();
+  return { found, first };
+}
+/** True when the grid can be finished using only "this is the only digit that fits" steps. */
+function solvesBySingles(g) {
+  const a = g.slice();
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (let i = 0; i < 81; i++) if (!a[i]) { const m = candidates(a, i); if (!m) return false; if (popcount(m) === 1) { a[i] = 31 - Math.clz32(m); moved = true; } }
+    for (const u of UNITS) for (let d = 1; d <= 9; d++) {
+      let spot = -1, n = 0;
+      for (const i of u) { if (a[i] === d) { n = -1; break; } if (!a[i] && candidates(a, i) & (1 << d)) { spot = i; n++; } }
+      if (n === 1) { a[spot] = d; moved = true; }
+    }
+  }
+  return a.every(Boolean);
+}
+const puzzleCache = new Map();
+/** The puzzle for a seed and difficulty: a random full grid, then clues taken away in mirrored
+ *  pairs while it still has exactly one solution (Easy: and stays solvable by simple steps). */
+function makePuzzle(seed, diff) {
+  const key = seed + ":" + diff; if (puzzleCache.has(key)) return puzzleCache.get(key);
+  const rnd = mulberry32(seed), sol = search(Array(81).fill(0), rnd, 1).first, puz = sol.slice(), target = CONFIG.givens[diff] || 32;
+  let left = 81;
+  for (const i of shuffle([...Array(41).keys()], rnd)) {
+    if (left <= target) break;
+    const j = 80 - i, keep = [puz[i], puz[j]];
+    puz[i] = 0; puz[j] = 0;
+    if (search(puz.slice(), null, 2).found === 1 && (diff !== "easy" || solvesBySingles(puz))) left -= i === j ? 1 : 2;
+    else { puz[i] = keep[0]; puz[j] = keep[1]; }
+  }
+  const pz = { sol, puz, blanks: puz.filter((v) => !v).length };
+  puzzleCache.set(key, pz); return pz;
+}
+const puzzleOf = (g) => makePuzzle(g.seed, g.diff);
+
+// ── RACE (HOST) ─────────────────────────────────────────────────────────────────────
+const host = { last: null, wasHost: false, round: -1, cells: null, own: null, dirty: false, lastWrite: 0, gridV: 0, bots: new Map(), botsJson: "", botsV: 0, lastBots: 0, lastCheck: 0, lastSync: 0 };
+/** The round as state has it, or the host's own newer write that hasn't come back yet. `v` only goes up. */
+function race() {
+  const g = shared("race", null);
+  return host.last && isHost() && (!g || host.last.v > g.v) ? host.last : g;
+}
+function writeRace(g) { g = { ...g, v: (race()?.v ?? 0) + 1 }; host.last = g; net.setShared("race", JSON.stringify(g)); return g; }
+function newRound(id, pick) {
+  const diff = DIFFS.includes(pick && pick.diff) ? pick.diff : "easy", mode = pick && pick.mode === "coop" ? "coop" : "race";
+  const seed = Math.floor(Math.random() * 2 ** 31), startAt = Date.now() + CONFIG.countdownMs, pz = makePuzzle(seed, diff);
+  const pen = Math.max(0, Math.min(120, Math.round(+liveConfig().mistakeSec || CONFIG.mistakeSec)));
+  host.round = id; host.cells = pz.puz.slice(); host.own = pz.puz.map((v) => (v ? "-" : "."));
+  host.dirty = mode === "coop"; flushGrid(true);
+  makeBots(mode, diff, startAt);
+  publishBots(true);
+  return writeRace({ id, phase: "play", mode, diff, seed, pen, startAt, capAt: startAt + CONFIG.capMin[diff] * 60000, endsAt: 0, m: 0, doneMs: 0, res: [], next: { diff, mode } });
+}
+/** Become host: take the round, the co-op grid and the bots exactly as state has them. */
+function adopt() {
+  host.wasHost = true;
+  const g = race(); if (!g) return;
+  const pz = puzzleOf(g), f = shared("grid", null), b = shared("bots", null);
+  const ok = f && f.id === g.id && typeof f.s === "string" && f.s.length === 81 && typeof f.o === "string" && f.o.length === 81;
+  host.cells = ok ? [...f.s].map((ch) => (ch === "." ? 0 : +ch)) : pz.puz.slice();
+  host.own = ok ? [...f.o] : pz.puz.map((v) => (v ? "-" : "."));
+  host.round = g.id; host.dirty = false; host.gridV = (f && f.v) || 0; host.botsV = (b && b.v) || 0;
+  host.bots.clear();
+  if (b && b.r === g.id && Array.isArray(b.list)) for (const x of b.list) host.bots.set(x.i, { ...x });
+}
+function flushGrid(force) {
+  const now = performance.now();
+  if (!host.dirty || (!force && now - host.lastWrite < 100)) return; // at most 10 writes a second
+  host.dirty = false; host.lastWrite = now;
+  host.gridV = Math.max(host.gridV, shared("grid", {})?.v || 0) + 1;
+  net.setShared("grid", JSON.stringify({ id: host.round, v: host.gridV, s: host.cells.map((d) => d || ".").join(""), o: host.own.join("") }));
+}
+const progOf = (id) => (id === net.sessionId ? myProg() : parse(S.entities.players[id]?.prog, {}) || {});
+const nameOf = (id) => (id === net.sessionId ? myName : host.bots.get(id)?.n || S.entities.players[id]?.n || "Player");
+const colorOf = (id) => (id === net.sessionId ? myColor : host.bots.get(id)?.c || S.entities.players[id]?.c || "#ccc");
+const letterOf = (c) => LETTERS[Math.max(0, COLORS.indexOf(c))];
+/** Race: copy finish times into the results; end when every racer is done or gave up (or time's up). */
+function checkRace(g) {
+  const now = Date.now(), res = g.res.slice(), have = new Set(res.map((r) => r.i));
+  let racers = 0, open = 0;
+  for (const id of livePlayers()) {
+    const pr = progOf(id); if (pr.r !== g.id) continue;
+    racers++;
+    if (pr.t > 0 && !have.has(id)) { res.push({ i: id, n: nameOf(id), c: colorOf(id), t: pr.t, m: pr.m | 0 }); have.add(id); }
+    if (!(pr.t > 0) && !pr.g) open++;
+  }
+  for (const b of host.bots.values()) { const v = botView(b, g, now); if (v.t && !have.has(b.i)) { res.push({ i: b.i, n: b.n, c: b.c, t: v.t, m: v.m, b: 1 }); have.add(b.i); } }
+  if (res.length !== g.res.length) g = writeRace({ ...g, res });
+  if ((racers && !open) || now > g.capAt) endRace(g);
+}
+/** The race is over: everyone still solving goes on the results with how far they got. */
+function endRace(g) {
+  const now = Date.now(), res = g.res.slice(), have = new Set(res.map((r) => r.i));
+  for (const id of livePlayers()) { const pr = progOf(id); if (pr.r === g.id && !have.has(id)) res.push({ i: id, n: nameOf(id), c: colorOf(id), t: 0, p: pr.p | 0, m: pr.m | 0 }); }
+  for (const b of host.bots.values()) if (!have.has(b.i)) { const v = botView(b, g, now); res.push({ i: b.i, n: b.n, c: b.c, t: 0, p: v.p, m: v.m, b: 1 }); }
+  writeRace({ ...g, res, phase: "done", endsAt: now + CONFIG.resultsMs });
+}
+/** Co-op "put" intent: a right digit goes in the grid (in the placer's color); a wrong one costs the team time. */
+function applyPut(from, m) {
+  const g = race(); if (!g || g.mode !== "coop" || g.phase !== "play" || !m || m.r !== g.id || host.round !== g.id || Date.now() < g.startAt - 500) return;
+  const i = m.i | 0, d = m.d | 0; if (i < 0 || i > 80 || d < 1 || d > 9 || host.cells[i]) return;
+  if (puzzleOf(g).sol[i] !== d) {
+    writeRace({ ...g, m: g.m + 1 });
+    if (from !== net.sessionId) missFx(i, d);
+    net.send("miss", { i, d, by: from });
+    return;
+  }
+  host.cells[i] = d; host.own[i] = letterOf(colorOf(from)); host.dirty = true;
+  if (host.cells.every(Boolean)) { flushGrid(true); const now = Date.now(); writeRace({ ...race(), phase: "done", doneMs: now - g.startAt + g.m * g.pen * 1000, endsAt: now + CONFIG.resultsMs }); }
+}
+function applyGiveUp() { const g = race(); if (g && g.mode === "coop" && g.phase === "play") writeRace({ ...g, phase: "done", doneMs: 0, endsAt: Date.now() + CONFIG.resultsMs }); }
+function applyPick(m) {
+  const g = race(); if (!g || !m) return;
+  const next = { ...g.next };
+  if (DIFFS.includes(m.diff)) next.diff = m.diff;
+  if (m.mode === "race" || m.mode === "coop") next.mode = m.mode;
+  if (next.diff !== g.next.diff || next.mode !== g.next.mode) writeRace({ ...g, next });
+}
+function applyAgain() { const g = race(); if (g && g.phase === "done") newRound(g.id + 1, g.next); }
+function hostTick(now) {
+  if (!host.wasHost) adopt();
+  let g = race();
+  if (!g) g = newRound(1, { diff: "easy", mode: "race" });
+  if (host.round !== g.id) adopt();
+  if (g.phase === "done" && Date.now() > g.endsAt) g = newRound(g.id + 1, g.next);
+  if (g.phase === "play") {
+    if (g.mode === "race" && now - host.lastCheck > 250) { host.lastCheck = now; checkRace(g); }
+    if (g.mode === "coop") {
+      if (now - host.lastSync > 1000) { host.lastSync = now; syncCoopBots(); }
+      for (const b of host.bots.values()) coopBotTick(b, race(), now);
+      if (Date.now() > g.capAt && race().phase === "play") applyGiveUp();
+    }
+  }
+  flushGrid(false); publishBots(false);
+}
+
+// ── BOTS ────────────────────────────────────────────────────────────────────────────
+// Race bots don't solve anything: each has a start time, a solve time and a mistake count, and
+// how far along it is comes from the clock (slow at first, faster as the grid fills, with
+// pauses). Its filled squares follow an order that starts with the easy ones, like a person.
+// Co-op bots really fill the shared grid: the square with the fewest options first.
+const rnd = (a, b) => a + Math.random() * (b - a);
+function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
+function takenColors() { return new Set([...livePlayers().map((id) => colorOf(id)), ...[...host.bots.values()].map((b) => b.c)]); }
+function newBot(used) {
+  const names = new Set([...host.bots.values()].map((b) => b.n)), taken = takenColors();
+  const n = shuffle(BOT_NAMES.slice(), Math.random).find((x) => !names.has(x)) || "Bot";
+  return { i: "~b" + Math.random().toString(36).slice(2, 6), n, c: COLORS.find((c) => !taken.has(c) && !used.has(c)) || "#ccc" };
+}
+function makeBots(mode, diff, startAt) {
+  host.bots.clear();
+  const want = Math.max(0, (mode === "race" ? CONFIG.seats : CONFIG.coopSeats) - livePlayers().length), used = new Set();
+  for (let k = 0; k < want; k++) {
+    const b = newBot(used); used.add(b.c);
+    if (mode === "race") { const [lo, hi] = CONFIG.botSec[diff], [m0, m1] = CONFIG.botMistakes; Object.assign(b, { at: Math.round(startAt + rnd(...CONFIG.botReadMs)), dur: Math.round(rnd(lo, hi) * 1000), m: Math.floor(rnd(m0, m1 + 1)) }); }
+    host.bots.set(b.i, b);
+  }
+}
+const orderCache = new Map();
+/** The order a race bot fills its squares: easy squares (few options) first, shuffled a little. */
+function botOrder(b, g) {
+  const key = b.i + g.id; if (orderCache.has(key)) return orderCache.get(key);
+  const pz = puzzleOf(g), r = mulberry32(hashStr(key)), score = [];
+  for (let i = 0; i < 81; i++) if (!pz.puz[i]) score.push([i, popcount(candidates(pz.puz, i)) + r() * 3.5]);
+  const order = score.sort((a, b) => a[1] - b[1]).map((x) => x[0]);
+  if (orderCache.size > 40) orderCache.clear();
+  orderCache.set(key, order); return order;
+}
+/** Where a race bot is at time `now`: percent, filled squares (heat), mistakes so far, finish time. */
+function botView(b, g, now) {
+  const order = botOrder(b, g), k = 6 + (hashStr(b.i) % 5);
+  let x = Math.max(0, Math.min(1, (now - b.at) / b.dur));
+  x += (0.7 * Math.sin(2 * Math.PI * k * x)) / (2 * Math.PI * k); // pauses and bursts, never going backwards
+  const f = x >= 1 ? 1 : x ** 1.3, filled = Math.floor(f * order.length), done = now >= b.at + b.dur;
+  const heat = Array(81).fill("."), pz = puzzleOf(g);
+  for (let i = 0; i < 81; i++) if (pz.puz[i]) heat[i] = "-";
+  for (let j = 0; j < filled; j++) heat[order[j]] = "#";
+  const m = done ? b.m : Math.min(b.m, Math.floor(f * (b.m + 0.6)));
+  return { p: done ? 100 : Math.min(99, Math.floor((100 * filled) / order.length)), heat: heat.join(""), m, t: done ? b.at - g.startAt + b.dur + b.m * g.pen * 1000 : 0 };
+}
+function botList(g) {
+  if (isHost()) return [...host.bots.values()];
+  const b = shared("bots", null); return b && g && b.r === g.id && Array.isArray(b.list) ? b.list : [];
+}
+function publishBots(force) {
+  const now = performance.now(); if (!force && now - host.lastBots < 250) return; host.lastBots = now;
+  const list = [...host.bots.values()].map((b) => ({ i: b.i, n: b.n, c: b.c, at: b.at, dur: b.dur, m: b.m, s: b.s }));
+  const json = JSON.stringify(list) + host.round; if (json === host.botsJson && !force) return; host.botsJson = json;
+  host.botsV = Math.max(host.botsV, shared("bots", {})?.v || 0) + 1;
+  net.setShared("bots", JSON.stringify({ r: host.round, v: host.botsV, list }));
+}
+function syncCoopBots() {
+  const want = Math.max(0, CONFIG.coopSeats - livePlayers().length);
+  while (host.bots.size > want) host.bots.delete([...host.bots.keys()].pop());
+  while (host.bots.size < want) { const b = newBot(new Set()); host.bots.set(b.i, b); }
+}
+/** A co-op bot picks the square with the fewest options (not one another bot is on), thinks, then fills it. */
+function coopBotTick(b, g, now) {
+  if (!g || g.phase !== "play" || Date.now() < g.startAt) return;
+  if (b.s === undefined || host.cells[b.s]) {
+    const claimed = new Set([...host.bots.values()].filter((o) => o !== b).map((o) => o.s));
+    let best = [], bestN = 10;
+    for (let i = 0; i < 81; i++) if (!host.cells[i] && !claimed.has(i)) { const n = popcount(candidates(host.cells, i)); if (n < bestN) { best = [i]; bestN = n; } else if (n === bestN) best.push(i); }
+    if (!best.length) { b.s = undefined; return; }
+    b.s = best[Math.floor(Math.random() * best.length)];
+    const [lo, hi] = CONFIG.coopBotSec[g.diff]; b.actAt = now + rnd(lo, hi) * 1000;
+  }
+  if (now < b.actAt) return;
+  const right = puzzleOf(g).sol[b.s], d = Math.random() < CONFIG.coopBotMistake ? (right % 9) + 1 : right;
+  applyPut(b.i, { r: g.id, i: b.s, d });
+  b.s = undefined;
+}
+
+// ── ME ──────────────────────────────────────────────────────────────────────────────
+const myName = (() => { try { return localStorage.getItem("mpa-name") || ""; } catch { return ""; } })() ||
+  ["Swift", "Clever", "Calm", "Lucky", "Sharp", "Bright"][Math.floor(Math.random() * 6)] + " " + ["Owl", "Fox", "Otter", "Lynx", "Heron"][Math.floor(Math.random() * 5)];
+let myColor = COLORS[0]; // picked on join: the first color nobody in the room has
+const me = { round: -1, cells: Array(81).fill(0), pencil: Array(81).fill(0), sel: 40, pencilMode: false, mistakes: 0, start: 0, seenAt: 0, doneMs: 0, gaveUp: false, submitted: null, lastProg: 0, prog: "" };
+const pending = new Map(); // co-op: square -> { d, until }, my digit shown at once until the host's grid has it
+
+/** A new puzzle (the round id changed): reset my grid, marks, clock and screens. */
+function onRound(g) {
+  const pz = puzzleOf(g);
+  Object.assign(me, { round: g.id, cells: pz.puz.slice(), mistakes: 0, start: 0, seenAt: Date.now(), doneMs: 0, gaveUp: false, submitted: null, sel: 40 });
+  me.pencil.fill(0); pending.clear(); flashes.length = 0; pops.clear(); glows.clear(); floats.length = 0;
+  $("over").hidden = true; cardAt = 0; giveUpArm = 0;
+}
+/** The grid as I see it: my own (race) or the team's with my unconfirmed digits on top (co-op). */
+function viewCells(g) {
+  if (g.mode === "race") return me.cells;
+  const out = gridNow(g).cells.slice(), now = performance.now();
+  for (const [i, p] of pending) { if (out[i] || now > p.until) pending.delete(i); else out[i] = p.d; }
+  return out;
+}
+/** The co-op grid: the host's live copy, or the last one it wrote (the puzzle's clues if that's an older round). */
+function gridNow(g) {
+  if (isHost() && host.round === g.id && host.cells) return { cells: host.cells, own: host.own };
+  const f = shared("grid", null);
+  if (f && f.id === g.id && typeof f.s === "string" && f.s.length === 81 && typeof f.o === "string") return { cells: [...f.s].map((ch) => (ch === "." ? 0 : +ch)), own: [...f.o] };
+  const pz = puzzleOf(g); return { cells: pz.puz, own: pz.puz.map((v) => (v ? "-" : ".")) };
+}
+const canPlay = (g) => g && g.phase === "play" && Date.now() >= g.startAt && !(g.mode === "race" && (me.doneMs || me.gaveUp));
+/** Put digit d in square i (or toggle a pencil mark). A wrong digit flashes red and costs time. */
+function placeAt(i, d, pencil) {
+  const g = race(); if (!canPlay(g)) return;
+  const cells = viewCells(g), pz = puzzleOf(g);
+  if (cells[i]) return; // a clue or already filled
+  if (!me.start) me.start = Math.max(g.startAt, me.seenAt);
+  if (pencil) { me.pencil[i] ^= 1 << d; sfx("pencil"); return; }
+  if (pz.sol[i] !== d) {
+    missFx(i, d);
+    if (g.mode === "race") { me.mistakes++; publish(true); }
+    else if (isHost()) applyPut(net.sessionId, { r: g.id, i, d }); else net.send("put", { r: g.id, i, d });
+    return;
+  }
+  for (const j of PEERS[i]) me.pencil[j] &= ~(1 << d); // that digit can't go next to it any more
+  me.pencil[i] = 0;
+  if (g.mode === "race") me.cells[i] = d;
+  else { pending.set(i, { d, until: performance.now() + 2000 }); if (isHost()) applyPut(net.sessionId, { r: g.id, i, d }); else net.send("put", { r: g.id, i, d }); }
+  pops.set(i, performance.now()); sfx("place");
+  const after = viewCells(g);
+  for (const u of UNITS_OF[i]) if (u.every((j) => after[j])) u.forEach((j, k) => glows.set(j, performance.now() + k * 35)); // a row, column or box finished
+  if (g.mode === "race" && after.every(Boolean)) finish(g);
+}
+function finish(g) {
+  me.doneMs = Math.max(1000, Date.now() - me.start) + me.mistakes * g.pen * 1000;
+  confetti(); sfx("win"); publish(true);
+  const b = boardFor(g.diff);
+  if (b && !ATTRACT) me.submitted = b.submit(Math.max(0, BIG - me.doneMs)).catch(() => null);
+}
+function giveUp() {
+  const g = race(); if (!g || g.phase !== "play") return;
+  if (g.mode === "race") { me.gaveUp = true; publish(true); }
+  else if (isHost()) applyGiveUp(); else net.send("giveup", {});
+}
+const percent = (g) => { const pz = puzzleOf(g), cells = viewCells(g); let n = 0; for (let i = 0; i < 81; i++) if (!pz.puz[i] && cells[i]) n++; return me.doneMs ? 100 : Math.min(99, Math.floor((100 * n) / pz.blanks)); };
+function myProg() {
+  const g = race(); if (!g || me.round !== g.id) return { r: me.round };
+  const pz = puzzleOf(g), h = g.mode === "race" ? me.cells.map((v, i) => (pz.puz[i] ? "-" : v ? "#" : ".")).join("") : "";
+  return { r: me.round, s: me.sel, h, p: percent(g), m: me.mistakes, t: me.doneMs, g: me.gaveUp ? 1 : 0 };
+}
+/** My progress (or my selected square, in co-op) for everyone: only when it changes, at most 4 times a second. */
+function publish(force) {
+  const now = performance.now(); if (!force && now - me.lastProg < CONFIG.progressMs) return;
+  const v = JSON.stringify(myProg()); if (v === me.prog) return;
+  me.prog = v; me.lastProg = now; net.me.set("prog", v);
+}
+
+// ── DRAW ────────────────────────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const cv = $("board"), ctx = cv.getContext("2d"), wrap = $("boardWrap");
+const geo = { W: 0, H: 0, dpr: 1, cs: 40, x0: 0, y0: 0 };
+function layout() {
+  const r = wrap.getBoundingClientRect(); geo.dpr = Math.min(2, devicePixelRatio || 1);
+  if (r.width === geo.W && r.height === geo.H) return;
+  geo.W = r.width; geo.H = r.height; cv.width = Math.round(r.width * geo.dpr); cv.height = Math.round(r.height * geo.dpr);
+  geo.cs = Math.floor(Math.min(r.width - 6, r.height - 6) / 9); geo.x0 = Math.round((r.width - geo.cs * 9) / 2); geo.y0 = r.height > r.width + 40 ? 4 : Math.round((r.height - geo.cs * 9) / 2); // a tall phone: the board sits at the top
+}
+addEventListener("resize", layout); addEventListener("orientationchange", layout);
+const flashes = [], floats = [], parts = [], pops = new Map(), glows = new Map(); // effects
+function missFx(i, d) { flashes.push({ i, d, at: performance.now() }); const g = race(); floats.push({ i, text: `+${g ? g.pen : CONFIG.mistakeSec}s`, at: performance.now() }); sfx("miss"); }
+function confetti() { for (let k = 0; k < 110; k++) parts.push({ x: geo.x0 + geo.cs * 4.5, y: geo.y0 + geo.cs * 4.5, vx: rnd(-9, 9), vy: rnd(-11, 2), life: rnd(1.2, 2.2), c: COLORS[k % COLORS.length], s: rnd(4, 8) }); }
+/** A darker shade of a color, so digits stay readable on the paper. */
+function inkOf(hex) { const n = parseInt(hex.slice(1), 16), f = 0.62; return `rgb(${((n >> 16) & 255) * f | 0},${((n >> 8) & 255) * f | 0},${(n & 255) * f | 0})`; }
+function draw(g, dt, now) {
+  layout();
+  ctx.setTransform(geo.dpr, 0, 0, geo.dpr, 0, 0); ctx.clearRect(0, 0, geo.W, geo.H);
+  const { cs, x0, y0 } = geo, size = cs * 9, pz = puzzleOf(g), cells = viewCells(g), hidden = Date.now() < g.startAt;
+  const coop = g.mode === "coop", own = coop ? gridNow(g).own : null, sel = me.sel, selD = cells[sel];
+  ctx.fillStyle = "#0007"; ctx.beginPath(); ctx.roundRect(x0 - 4, y0 + 2, size + 8, size + 8, 12); ctx.fill(); // shadow
+  ctx.fillStyle = "#fbf7ee"; ctx.beginPath(); ctx.roundRect(x0 - 4, y0 - 4, size + 8, size + 8, 12); ctx.fill();
+  const playing = canPlay(g) || (g.phase === "play" && !hidden);
+  for (let i = 0; i < 81; i++) {
+    const x = x0 + COL(i) * cs, y = y0 + ROW(i) * cs;
+    let bg = null;
+    if (!hidden && playing) {
+      if (ROW(i) === ROW(sel) || COL(i) === COL(sel) || BOX(i) === BOX(sel)) bg = "#ece7f6";
+      if (selD && cells[i] === selD) bg = "#cfe0ff";
+      if (i === sel) bg = "#a9c8ff";
+    }
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(x, y, cs, cs); }
+    const gl = glows.get(i); // a finished row/column/box sweeps gold
+    if (gl !== undefined) { const k = (now - gl) / 600; if (k > 1) glows.delete(i); else if (k > 0) { ctx.fillStyle = `rgba(255,207,90,${0.75 * Math.sin(Math.PI * k)})`; ctx.fillRect(x, y, cs, cs); } }
+  }
+  for (let k = flashes.length - 1; k >= 0; k--) { // a wrong digit: the square flashes red with the digit shaking
+    const f = flashes[k], t = (now - f.at) / 700; if (t > 1) { flashes.splice(k, 1); continue; }
+    const x = x0 + COL(f.i) * cs, y = y0 + ROW(f.i) * cs;
+    ctx.fillStyle = `rgba(255,93,93,${0.65 * (1 - t)})`; ctx.fillRect(x, y, cs, cs);
+    ctx.fillStyle = `rgba(200,30,30,${1 - t})`; ctx.font = `800 ${cs * 0.62}px system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(f.d, x + cs / 2 + Math.sin(t * 40) * cs * 0.08 * (1 - t), y + cs / 2 + cs * 0.03);
+  }
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  if (!hidden) for (let i = 0; i < 81; i++) {
+    const x = x0 + COL(i) * cs + cs / 2, y = y0 + ROW(i) * cs + cs / 2, d = cells[i];
+    if (d) {
+      const given = !!pz.puz[i], p = pops.get(i), k = p === undefined ? 1 : Math.min(1, (now - p) / 220), s = 1 + 0.35 * Math.sin(Math.PI * k) * (1 - k * 0.3);
+      if (k >= 1) pops.delete(i);
+      const who = coop && !given ? COLORS[LETTERS.indexOf(own[i])] : null;
+      ctx.fillStyle = given ? "#262a4a" : who ? inkOf(who) : coop ? inkOf(myColor) : "#2f5fc4"; // race: my digits in blue; co-op: in the placer's color
+      ctx.font = `${given ? 800 : 700} ${Math.round(cs * 0.6 * s)}px system-ui, sans-serif`;
+      ctx.fillText(d, x, y + cs * 0.04);
+    } else if (me.pencil[i]) {
+      ctx.fillStyle = "#7d7896"; ctx.font = `600 ${Math.round(cs * 0.24)}px system-ui, sans-serif`;
+      for (let n = 1; n <= 9; n++) if (me.pencil[i] & (1 << n)) ctx.fillText(n, x + ((n - 1) % 3 - 1) * cs * 0.3, y + (Math.floor((n - 1) / 3) - 1) * cs * 0.3 + 1);
+    }
+  }
+  ctx.strokeStyle = "#d6cfbf"; ctx.lineWidth = 1; ctx.beginPath(); // thin lines, then the box lines
+  for (let k = 1; k < 9; k++) if (k % 3) { ctx.moveTo(x0 + k * cs + 0.5, y0); ctx.lineTo(x0 + k * cs + 0.5, y0 + size); ctx.moveTo(x0, y0 + k * cs + 0.5); ctx.lineTo(x0 + size, y0 + k * cs + 0.5); }
+  ctx.stroke(); ctx.strokeStyle = "#262a4a"; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let k = 3; k < 9; k += 3) { ctx.moveTo(x0 + k * cs, y0); ctx.lineTo(x0 + k * cs, y0 + size); ctx.moveTo(x0, y0 + k * cs); ctx.lineTo(x0 + size, y0 + k * cs); }
+  ctx.stroke(); ctx.beginPath(); ctx.roundRect(x0 - 1, y0 - 1, size + 2, size + 2, 6); ctx.stroke();
+  if (coop && !hidden) drawTeamCursors(g, now);
+  for (let k = floats.length - 1; k >= 0; k--) { // "+10s" drifting up
+    const f = floats[k], t = (now - f.at) / 1100; if (t > 1) { floats.splice(k, 1); continue; }
+    ctx.globalAlpha = 1 - t * t; ctx.fillStyle = "#e03131"; ctx.font = `900 ${Math.round(cs * 0.45)}px system-ui, sans-serif`;
+    ctx.fillText(f.text, x0 + COL(f.i) * cs + cs / 2, y0 + ROW(f.i) * cs - t * cs * 0.9); ctx.globalAlpha = 1;
+  }
+  if (hidden) { // 3-2-1: the grid stays blank until the start
+    const left = Math.ceil((g.startAt - Date.now()) / 1000), frac = ((g.startAt - Date.now()) % 1000) / 1000;
+    ctx.fillStyle = "#262a4a"; ctx.font = `900 ${Math.round(cs * 3 * (0.8 + 0.3 * frac))}px system-ui, sans-serif`; ctx.globalAlpha = 0.25 + 0.75 * frac;
+    ctx.fillText(left, x0 + size / 2, y0 + size / 2); ctx.globalAlpha = 1;
+    ctx.font = `800 ${Math.round(cs * 0.42)}px system-ui, sans-serif`; ctx.fillText(`${DIFF_NAMES[g.diff]} · ${g.mode === "coop" ? "Co-op" : "Race"}`, x0 + size / 2, y0 + size * 0.78);
+  }
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const p = parts[k]; p.life -= dt; p.vy += 22 * dt; p.x += p.vx * dt * 60; p.y += p.vy * dt * 60;
+    if (p.life <= 0) { parts.splice(k, 1); continue; }
+    ctx.globalAlpha = Math.min(1, p.life * 2); ctx.fillStyle = p.c; ctx.fillRect(p.x, p.y, p.s, p.s); ctx.globalAlpha = 1;
+  }
+}
+/** Co-op: everyone else's selected square, outlined in their color with their name. */
+function drawTeamCursors(g, now) {
+  const { cs, x0, y0 } = geo, list = [];
+  for (const id of livePlayers()) { if (id === net.sessionId) continue; const pr = progOf(id); if (pr.r === g.id && pr.s >= 0) list.push({ s: pr.s, n: nameOf(id), c: colorOf(id) }); }
+  for (const b of botList(g)) if (b.s >= 0) list.push({ s: b.s, n: b.n, c: b.c });
+  ctx.lineWidth = 3; ctx.font = "700 11px system-ui, sans-serif";
+  for (const c of list) {
+    const x = x0 + COL(c.s) * cs, y = y0 + ROW(c.s) * cs, pulse = 0.5 + 0.5 * Math.sin(now / 180);
+    ctx.strokeStyle = c.c; ctx.globalAlpha = 0.7 + 0.3 * pulse; ctx.strokeRect(x + 2, y + 2, cs - 4, cs - 4); ctx.globalAlpha = 1;
+    const w = ctx.measureText(c.n).width + 8; ctx.fillStyle = c.c; ctx.beginPath(); ctx.roundRect(x + cs - 6, y - 8, w, 15, 4); ctx.fill();
+    ctx.fillStyle = "#14172b"; ctx.textAlign = "left"; ctx.fillText(c.n, x + cs - 2, y); ctx.textAlign = "center";
+  }
+}
+
+// ── HUD & CARD ──────────────────────────────────────────────────────────────────────
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const fmt = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const byRank = (a, b) => (a.t && b.t ? a.t - b.t : a.t ? -1 : b.t ? 1 : (b.p || 0) - (a.p || 0));
+let auth = null, cardAt = 0, lastPhase = "", dropped = false, giveUpArm = 0;
+const boards = {};
+const boardFor = (diff) => (auth ? (boards[diff] = boards[diff] || auth.leaderboard(`${CONFIG.board}-${diff}`)) : null);
+/** Everyone in this puzzle for the side cards: racers with their heatmaps, or the co-op crew. */
+function roster(g) {
+  const out = [], now = Date.now(), coop = g.mode === "coop", grid = coop ? gridNow(g) : null, pz = puzzleOf(g);
+  const crewHeat = (c) => { const L = letterOf(c); let n = 0; const h = grid.own.map((o, i) => (pz.puz[i] ? "-" : o === L ? (n++, "#") : ".")).join(""); return { h, n }; };
+  for (const id of livePlayers()) {
+    const pr = progOf(id); if (pr.r !== g.id) continue;
+    const c = colorOf(id), row = { id, n: id === net.sessionId ? "You" : nameOf(id), c, me: id === net.sessionId };
+    if (coop) { const { h, n } = crewHeat(c); Object.assign(row, { heat: h, cnt: n }); } else Object.assign(row, { heat: pr.h, p: pr.p | 0, m: pr.m | 0, t: pr.t | 0, g: pr.g });
+    out.push(row);
+  }
+  for (const b of botList(g)) {
+    if (coop) { const { h, n } = crewHeat(b.c); out.push({ id: b.i, n: b.n, c: b.c, bot: true, heat: h, cnt: n }); }
+    else { const v = botView(b, g, now); out.push({ id: b.i, n: b.n, c: b.c, bot: true, heat: v.heat, p: v.p, m: v.m, t: v.t }); }
+  }
+  return coop ? out.sort((a, b) => b.cnt - a.cnt) : out.sort(byRank);
+}
+const cards = new Map(); // id -> { el, heatKey }
+/** The rival cards: a mini heatmap of filled squares (not digits), a progress bar and a status. */
+function rivalsUI(g) {
+  const list = roster(g), box = $("rivals"), seen = new Set();
+  list.forEach((r, k) => {
+    let c = cards.get(r.id);
+    if (!c) {
+      const el = document.createElement("div"); el.className = "rv";
+      el.innerHTML = `<i></i><canvas width="92" height="92"></canvas><div class="info"><b></b><div class="bar"><u></u></div><span></span></div>`;
+      box.appendChild(el); c = { el, heatKey: "" }; cards.set(r.id, c);
+    }
+    seen.add(r.id);
+    c.el.style.order = k; c.el.classList.toggle("me", !!r.me); c.el.classList.toggle("done", !!r.t);
+    c.el.querySelector("i").textContent = g.mode === "race" ? k + 1 : "";
+    c.el.querySelector("b").textContent = r.n + (r.bot ? " 🤖" : "");
+    const pct = g.mode === "race" ? r.p : Math.round((100 * r.cnt) / puzzleOf(g).blanks);
+    Object.assign(c.el.querySelector("u").style, { width: pct + "%", background: r.c });
+    c.el.querySelector("span").textContent = g.mode === "coop" ? `${r.cnt} placed` : r.t ? `✓ ${fmt(r.t)}` : r.g ? "gave up" : `${r.p}%${r.m ? " · ✖" + r.m : ""}`;
+    const key = r.heat + r.c;
+    if (key !== c.heatKey && typeof r.heat === "string" && r.heat.length === 81) { c.heatKey = key; drawHeat(c.el.querySelector("canvas"), r.heat, r.c); }
+  });
+  for (const [id, c] of cards) if (!seen.has(id)) { c.el.remove(); cards.delete(id); }
+}
+function drawHeat(canvas, heat, color) {
+  const h = canvas.getContext("2d"), s = 10, gap = 1;
+  h.clearRect(0, 0, 92, 92);
+  for (let i = 0; i < 81; i++) {
+    const x = COL(i) * s + Math.floor(COL(i) / 3) * gap, y = ROW(i) * s + Math.floor(ROW(i) / 3) * gap;
+    h.fillStyle = heat[i] === "#" ? color : heat[i] === "-" ? "#4a5085" : "#2d3260";
+    h.fillRect(x, y, s - 1, s - 1);
+  }
+}
+function hud(g) {
+  const coop = g.mode === "coop", pen = g.pen * 1000;
+  $("diff").textContent = `${DIFF_NAMES[g.diff]} · ${coop ? "Co-op" : "Race"}`;
+  const miss = coop ? g.m : me.mistakes;
+  $("miss").textContent = miss ? `✖ ${miss} (+${miss * g.pen}s)` : "";
+  const t = Date.now() < g.startAt ? 0 : coop ? (g.phase === "done" ? g.doneMs : Date.now() - g.startAt + g.m * pen) : me.doneMs || (me.start ? Date.now() - me.start + me.mistakes * pen : 0);
+  $("clock").textContent = fmt(Math.max(0, t));
+  const n = livePlayers().length;
+  $("net").textContent = ATTRACT ? "" : net.offline ? "Offline: playing with bots" : dropped ? "Reconnecting…" : `Online · ${n} player${n === 1 ? "" : "s"}${isHost() ? " · you run the race" : ""}`;
+  const fresh = Date.now() - g.startAt < CONFIG.hintMs && g.phase === "play";
+  $("hint").style.opacity = fresh && !ATTRACT ? 1 : 0;
+  $("hint").textContent = coop ? "One grid for the whole team · a wrong digit adds time for everyone" : touchUI ? "Tap a square, then a number · ✎ for pencil marks · wrong digits cost time" : "Click a square, type 1–9 · Shift+digit or ✎ for pencil marks · wrong digits cost time";
+  const waiting = roster(g).filter((r) => !r.t && !r.g).length;
+  $("banner").textContent = !coop && g.phase === "play" && me.doneMs ? `✓ Finished in ${fmt(me.doneMs)} · ${waiting ? `waiting for ${waiting} racer${waiting === 1 ? "" : "s"}` : "that's everyone"}` : !coop && me.gaveUp && g.phase === "play" ? "You gave up · watching the race" : "";
+  rivalsUI(g); padUI(g);
+  if (cardAt && performance.now() > cardAt) { cardAt = 0; $("over").hidden = false; }
+  if (!$("over").hidden) { $("nextIn").textContent = `Next puzzle in ${Math.max(0, Math.ceil((g.endsAt - Date.now()) / 1000))}s`; pickUI(g); }
+}
+function pickUI(g) {
+  for (const b of $("pickDiff").children) b.classList.toggle("on", b.dataset.d === g.next.diff);
+  for (const b of $("pickMode").children) b.classList.toggle("on", b.dataset.m === g.next.mode);
+}
+/** Once per change of phase: the results card (race ranks or the team's time) and the leaderboard. */
+function onPhase(g) {
+  const key = g.id + g.phase; if (key === lastPhase) return; lastPhase = key;
+  if (g.phase === "play") { $("over").hidden = true; cardAt = 0; return; }
+  if (g.mode === "coop" && g.doneMs) { confetti(); sfx("win"); }
+  if (ATTRACT) return;
+  cardAt = performance.now() + 1200;
+  const res = g.res.slice().sort(byRank), place = res.findIndex((r) => r.i === net.sessionId), mine = res[place];
+  if (g.mode === "race") {
+    $("overTitle").textContent = mine && mine.t ? (place === 0 ? "You won! 🏆" : `You finished ${place + 1}${["st", "nd", "rd"][place] || "th"}`) : "Race over";
+    $("overText").textContent = mine && mine.t ? `${fmt(mine.t)}${mine.m ? ` · ${mine.m} mistake${mine.m === 1 ? "" : "s"} (+${mine.m * g.pen}s)` : " · no mistakes"}` : `${DIFF_NAMES[g.diff]} puzzle`;
+    $("ranksTitle").textContent = "This race";
+    $("ranks").innerHTML = res.map((r) => `<li><i style="background:${esc(r.c)}"></i>${esc(r.i === net.sessionId ? "You" : r.n)}<span>${r.t ? fmt(r.t) + (r.m ? " ✖" + r.m : "") : "DNF " + (r.p | 0) + "%"}</span></li>`).join("") || "<li>Nobody finished.</li>";
+  } else {
+    $("overTitle").textContent = g.doneMs ? "Solved together! 🤝" : "Puzzle over";
+    $("overText").textContent = g.doneMs ? `${fmt(g.doneMs)}${g.m ? ` · ${g.m} team mistake${g.m === 1 ? "" : "s"} (+${g.m * g.pen}s)` : " · no mistakes"}` : "Not finished this time.";
+    $("ranksTitle").textContent = "Squares placed";
+    $("ranks").innerHTML = roster(g).map((r) => `<li><i style="background:${esc(r.c)}"></i>${esc(r.n)}<span>${r.cnt}</span></li>`).join("");
+  }
+  const board = g.mode === "race" ? boardFor(g.diff) : null, top = $("top");
+  $("boardBox").hidden = g.mode !== "race";
+  $("boardTitle").textContent = `Fastest ${DIFF_NAMES[g.diff]} races`;
+  if (!board) { top.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
+  top.innerHTML = "<li>Loading…</li>";
+  (me.submitted || Promise.resolve()).then(() => board.top(10)).then(({ entries }) => {
+    top.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${fmt(BIG - e.score)}</span></li>`).join("") : "<li>No times yet. Be the first.</li>";
+  }).catch(() => { top.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+}
+let audio = null;
+function sfx(kind) {
+  if (!audio) return;
+  try {
+    const t = audio.currentTime, tone = (f, d, type = "triangle", v = 0.06, f2 = f, at = 0) => { const o = audio.createOscillator(), gn = audio.createGain(); o.type = type; o.frequency.setValueAtTime(f, t + at); o.frequency.exponentialRampToValueAtTime(f2, t + at + d); gn.gain.setValueAtTime(v, t + at); gn.gain.exponentialRampToValueAtTime(0.0001, t + at + d); o.connect(gn).connect(audio.destination); o.start(t + at); o.stop(t + at + d + 0.02); };
+    if (kind === "place") tone(660, 0.09, "triangle", 0.06, 880);
+    if (kind === "pencil") tone(1200, 0.04, "sine", 0.03);
+    if (kind === "miss") tone(220, 0.25, "sawtooth", 0.05, 110);
+    if (kind === "tick") tone(520, 0.08, "square", 0.03);
+    if (kind === "win") [523, 659, 784, 1046].forEach((f, k) => tone(f, 0.2, "triangle", 0.07, f, k * 0.1));
+  } catch {}
+}
+/** Two players picked the same color at once (the joiner's first state can be empty): the later sessionId picks again. Bots' colors count too. */
+function fixColor() {
+  const g = race(), others = livePlayers().filter((id) => id !== net.sessionId), botColors = botList(g).map((b) => b.c);
+  if (!others.some((id) => S.entities.players[id]?.c === myColor && id < net.sessionId) && !botColors.includes(myColor)) return;
+  const taken = new Set([...others.map((id) => S.entities.players[id]?.c), ...botColors]), free = COLORS.find((c) => !taken.has(c));
+  if (free) { myColor = free; net.me.set("c", free); }
+}
+
+// ── INPUT ───────────────────────────────────────────────────────────────────────────
+const touchUI = matchMedia("(pointer: coarse)").matches && !ATTRACT;
+const wake = () => { if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch {} } };
+const padKeys = [1, 2, 3, "pencil", 4, 5, 6, "erase", 7, 8, 9, "giveup"];
+$("pad").innerHTML = padKeys.map((k) => typeof k === "number" ? `<button data-k="${k}">${k}<sup></sup></button>` : `<button class="tool" data-k="${k}">${{ pencil: "✎ Pencil", erase: "⌫ Erase", giveup: "⚑ Give up" }[k]}</button>`).join("");
+function padUI(g) {
+  const cells = viewCells(g), count = Array(10).fill(0); for (const d of cells) count[d]++;
+  for (const b of $("pad").children) {
+    const k = b.dataset.k;
+    if (+k) { b.classList.toggle("used", count[k] >= 9); b.querySelector("sup").textContent = 9 - count[k] || ""; }
+    if (k === "pencil") b.classList.toggle("on", me.pencilMode);
+    if (k === "giveup") { const armed = performance.now() < giveUpArm; b.classList.toggle("warn", armed); b.textContent = armed ? "Sure? Tap again" : "⚑ Give up"; }
+  }
+}
+function padPress(k, shift) {
+  const g = race(); if (!g) return;
+  if (+k) placeAt(me.sel, +k, me.pencilMode || shift);
+  else if (k === "pencil") me.pencilMode = !me.pencilMode;
+  else if (k === "erase") me.pencil[me.sel] = 0;
+  else if (k === "giveup") { if (performance.now() < giveUpArm) { giveUpArm = 0; giveUp(); } else giveUpArm = performance.now() + 2500; }
+  padUI(g); publish(false);
+}
+$("pad").addEventListener("pointerdown", (e) => { const b = e.target.closest("button"); if (!b) return; e.preventDefault(); wake(); padPress(b.dataset.k, e.shiftKey); });
+cv.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); wake();
+  const r = cv.getBoundingClientRect(), c = Math.floor((e.clientX - r.left - geo.x0) / geo.cs), w = Math.floor((e.clientY - r.top - geo.y0) / geo.cs);
+  if (c >= 0 && c < 9 && w >= 0 && w < 9) { me.sel = w * 9 + c; publish(false); }
+});
+cv.addEventListener("contextmenu", (e) => e.preventDefault());
+addEventListener("keydown", (e) => {
+  wake();
+  const digit = /^Digit[1-9]$/.test(e.code) ? +e.code.slice(5) : /^Numpad[1-9]$/.test(e.code) ? +e.code.slice(6) : 0;
+  if (digit) { e.preventDefault(); padPress(digit, e.shiftKey); return; }
+  const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1], a: [-1, 0], d: [1, 0], w: [0, -1], s: [0, 1] }[e.key];
+  if (mv) { e.preventDefault(); me.sel = ((ROW(me.sel) + mv[1] + 9) % 9) * 9 + ((COL(me.sel) + mv[0] + 9) % 9); publish(false); }
+  if (e.key === "p" || e.key === " ") { e.preventDefault(); padPress("pencil"); }
+  if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") padPress("erase");
+});
+for (const b of $("pickDiff").children) b.onclick = () => { const m = { diff: b.dataset.d }; if (isHost()) applyPick(m); else net.send("pick", m); };
+for (const b of $("pickMode").children) b.onclick = () => { const m = { mode: b.dataset.m }; if (isHost()) applyPick(m); else net.send("pick", m); };
+$("again").onclick = () => { if (isHost()) applyAgain(); else net.send("again", {}); };
+document.addEventListener("touchmove", (e) => { if (!e.target.closest(".card, #rivals")) e.preventDefault(); }, { passive: false });
+
+// ?attract: I solve quickly like a sharp human (a pencil mark here, a mistake there) while bots race.
+const auto = { next: 0, step: 0, target: -1, wrong: false };
+function autoTick(g, now) {
+  if (!canPlay(g) || now < auto.next) return;
+  const pz = puzzleOf(g), cells = me.cells;
+  if (auto.target < 0 || cells[auto.target]) { // the next square: few options, close to the last one
+    let best = -1, bestS = 99;
+    for (let i = 0; i < 81; i++) if (!cells[i]) { const s = popcount(candidates(cells, i)) * 2 + Math.abs(ROW(i) - ROW(me.sel)) + Math.abs(COL(i) - COL(me.sel)) * 0.7 + Math.random() * 2; if (s < bestS) { best = i; bestS = s; } }
+    auto.target = best; me.sel = best; auto.step++; auto.next = now + rnd(70, 140); return;
+  }
+  const i = auto.target, d = pz.sol[i];
+  if (auto.step % 12 === 6 && !auto.wrong) { auto.wrong = true; placeAt(i, (d % 9) + 1, false); auto.next = now + 380; return; }
+  if (auto.step % 5 === 2 && !me.pencil[i]) { placeAt(i, d, true); placeAt(i, (d % 9) + 1, true); auto.next = now + 260; return; }
+  auto.wrong = false; placeAt(i, d, false); auto.next = now + rnd(70, 150);
+}
+
+// ── MAIN LOOP ───────────────────────────────────────────────────────────────────────
+let last = performance.now(), lastHb = 0, lastHud = 0, lastCount = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  const realNow = performance.now(); // timed on the real clock: after a long freeze the rAF time can be from before the wake
+  if (lastFrameAt && realNow - lastFrameAt > 1000) { wakeHold = realNow + 700; host.wasHost = false; host.last = null; } lastFrameAt = realNow; // woke from a freeze or a background tab: let the stand-in host's state arrive, then adopt it like a new host
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; // the first frame can be timed before load: never negative
+  if (now - lastHb > 1000) { lastHb = now; net.me.set("hb", Date.now()); fixColor(); }
+  if (isHost()) hostTick(now); else host.wasHost = false;
+  const g = race();
+  if (!g) return;
+  if (g.id !== me.round) onRound(g);
+  if (!me.start && g.phase === "play" && Date.now() >= g.startAt) me.start = Math.max(g.startAt, me.seenAt); // a late joiner's clock starts when it arrived
+  const left = Math.ceil((g.startAt - Date.now()) / 1000); if (left > 0 && left !== lastCount) { lastCount = left; sfx("tick"); }
+  if (ATTRACT) autoTick(g, now);
+  onPhase(g);
+  publish(false);
+  draw(g, dt, now);
+  if (now - lastHud > 200) { lastHud = now; hud(g); }
+}
+
+(async function start() {
+  net = await connect();
+  net.onState((st) => { S = st; });
+  net.on("put", (m, from) => { if (isHost()) applyPut(from, m); });
+  net.on("pick", (m) => { if (isHost()) applyPick(m); });
+  net.on("again", () => { if (isHost()) applyAgain(); });
+  net.on("giveup", () => { if (isHost()) applyGiveUp(); });
+  net.on("miss", (m) => { const g = race(); if (m && m.by !== net.sessionId && g && g.mode === "coop") missFx(m.i | 0, m.d | 0); });
+  net.onDisconnect(() => { dropped = true; $("net").textContent = "Reconnecting…"; });
+  net.onReconnect(() => { dropped = false; });
+  if (!net.offline && typeof MP !== "undefined") auth = MP.auth({ key: MP_CONNECT.key, apiUrl: MP_CONNECT.apiUrl });
+  const taken = new Set([...Object.entries(S.entities.players || {}).filter(([id]) => id !== net.sessionId).map(([, p]) => p.c), ...((shared("bots", null) || {}).list || []).map((b) => b.c)]);
+  myColor = COLORS.find((c) => !taken.has(c)) || COLORS[Math.floor(Math.random() * COLORS.length)];
+  net.me.set({ n: myName, c: myColor, hb: Date.now() });
+  if (ATTRACT) { $("net").style.display = "none"; $("hint").style.display = "none"; Object.assign(CONFIG, { seats: 5, countdownMs: 1200, resultsMs: 2500, botReadMs: [300, 1200], botSec: { ...CONFIG.botSec, easy: [7, 13] }, botMistakes: [0, 2] }); }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
