@@ -12,7 +12,8 @@
          padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
          grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; grid-template-areas: "top" "rivals" "board" "hint" "pad" "net"; }
   header { grid-area: top; display: flex; align-items: center; gap: 8px; min-width: 0; }
-  header h1 { margin: 0; font-size: 19px; white-space: nowrap; } header h1 b { color: var(--gold); }
+  header h1 { margin: 0; font-size: 19px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; } header h1 b { color: var(--gold); } /* on a narrow phone the title gives way so the clock stays on screen */
+  header > :not(h1) { flex-shrink: 0; }
   .chip { padding: 4px 10px; border-radius: 999px; background: var(--panel); font: 700 13px system-ui, sans-serif; white-space: nowrap; color: var(--dim); }
   #clock { margin-left: auto; font: 800 20px ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
   #miss { color: var(--red); font-weight: 800; white-space: nowrap; }
@@ -53,6 +54,7 @@
   .card p { margin: 4px 0; color: var(--dim); }
   .card h3 { margin: 14px 0 4px; font-size: 12px; color: var(--green); text-align: left; text-transform: uppercase; letter-spacing: .06em; }
   .card ol { text-align: left; margin: 0; padding-left: 24px; font-size: 14px; } .card li { padding: 1px 0; } .card li span { float: right; font-family: ui-monospace, Consolas, monospace; color: var(--dim); }
+  .card li.note { list-style: none; margin-left: -24px; text-align: center; color: var(--dim); } /* a status line, not a numbered entry */
   .card li i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
   .seg { display: flex; gap: 6px; margin-top: 6px; } .seg button { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #ffffff0d; color: #fff; font: 700 14px system-ui, sans-serif; cursor: pointer; }
   .seg button.on { background: var(--gold); color: var(--ink); border-color: var(--gold); }
@@ -74,7 +76,7 @@
   <h2 id="overTitle">Race over</h2>
   <p id="overText"></p>
   <h3 id="ranksTitle">This race</h3><ol id="ranks"></ol>
-  <div id="boardBox"><h3 id="boardTitle">Fastest races</h3><ol id="top"><li>Loading…</li></ol></div>
+  <div id="boardBox"><h3 id="boardTitle">Fastest races</h3><ol id="top"><li class="note">Loading…</li></ol></div>
   <h3>Next puzzle</h3>
   <div class="seg" id="pickDiff"><button data-d="easy">Easy</button><button data-d="medium">Medium</button><button data-d="hard">Hard</button></div>
   <div class="seg" id="pickMode"><button data-m="race">🏁 Race</button><button data-m="coop">🤝 Co-op</button></div>
@@ -682,7 +684,7 @@ function hud(g) {
   const fresh = Date.now() - g.startAt < CONFIG.hintMs && g.phase === "play";
   $("hint").style.opacity = fresh && !ATTRACT ? 1 : 0;
   $("hint").textContent = coop ? "One grid for the whole team · a wrong digit adds time for everyone" : touchUI ? "Tap a square, then a number · ✎ for pencil marks · wrong digits cost time" : "Click a square, type 1–9 · Shift+digit or ✎ for pencil marks · wrong digits cost time";
-  const waiting = roster(g).filter((r) => !r.t && !r.g).length;
+  const waiting = roster(g).filter((r) => !r.bot && !r.t && !r.g).length; // the race ends when every PLAYER is done: bots still solving then get their percent
   $("banner").textContent = !coop && g.phase === "play" && me.doneMs ? `✓ Finished in ${fmt(me.doneMs)} · ${waiting ? `waiting for ${waiting} racer${waiting === 1 ? "" : "s"}` : "that's everyone"}` : !coop && me.gaveUp && g.phase === "play" ? "You gave up · watching the race" : "";
   rivalsUI(g); padUI(g);
   if (cardAt && performance.now() > cardAt) { cardAt = 0; $("over").hidden = false; }
@@ -704,7 +706,7 @@ function onPhase(g) {
     $("overTitle").textContent = mine && mine.t ? (place === 0 ? "You won! 🏆" : `You finished ${place + 1}${["st", "nd", "rd"][place] || "th"}`) : "Race over";
     $("overText").textContent = mine && mine.t ? `${fmt(mine.t)}${mine.m ? ` · ${mine.m} mistake${mine.m === 1 ? "" : "s"} (+${mine.m * g.pen}s)` : " · no mistakes"}` : `${DIFF_NAMES[g.diff]} puzzle`;
     $("ranksTitle").textContent = "This race";
-    $("ranks").innerHTML = res.map((r) => `<li><i style="background:${esc(r.c)}"></i>${esc(r.i === net.sessionId ? "You" : r.n)}<span>${r.t ? fmt(r.t) + (r.m ? " ✖" + r.m : "") : "DNF " + (r.p | 0) + "%"}</span></li>`).join("") || "<li>Nobody finished.</li>";
+    $("ranks").innerHTML = res.map((r) => `<li><i style="background:${esc(r.c)}"></i>${esc(r.i === net.sessionId ? "You" : r.n)}<span>${r.t ? fmt(r.t) + (r.m ? " ✖" + r.m : "") : "DNF " + (r.p | 0) + "%"}</span></li>`).join("") || "<li class=\"note\">Nobody finished.</li>";
   } else {
     $("overTitle").textContent = g.doneMs ? "Solved together! 🤝" : "Puzzle over";
     $("overText").textContent = g.doneMs ? `${fmt(g.doneMs)}${g.m ? ` · ${g.m} team mistake${g.m === 1 ? "" : "s"} (+${g.m * g.pen}s)` : " · no mistakes"}` : "Not finished this time.";
@@ -714,11 +716,11 @@ function onPhase(g) {
   const board = g.mode === "race" ? boardFor(g.diff) : null, top = $("top");
   $("boardBox").hidden = g.mode !== "race";
   $("boardTitle").textContent = `Fastest ${DIFF_NAMES[g.diff]} races`;
-  if (!board) { top.innerHTML = "<li>Leaderboards need a connection.</li>"; return; }
-  top.innerHTML = "<li>Loading…</li>";
+  if (!board) { top.innerHTML = "<li class=\"note\">Leaderboards need a connection.</li>"; return; }
+  top.innerHTML = "<li class=\"note\">Loading…</li>";
   (me.submitted || Promise.resolve()).then(() => board.top(10)).then(({ entries }) => {
-    top.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${fmt(BIG - e.score)}</span></li>`).join("") : "<li>No times yet. Be the first.</li>";
-  }).catch(() => { top.innerHTML = "<li>Couldn't load the leaderboard.</li>"; });
+    top.innerHTML = entries.length ? entries.map((e) => `<li>${esc(e.username || "Player")}<span>${fmt(BIG - e.score)}</span></li>`).join("") : "<li class=\"note\">No times yet. Be the first.</li>";
+  }).catch(() => { top.innerHTML = "<li class=\"note\">Couldn't load the leaderboard.</li>"; });
 }
 let audio = null;
 function sfx(kind) {
@@ -771,11 +773,12 @@ cv.addEventListener("pointerdown", (e) => {
 cv.addEventListener("contextmenu", (e) => e.preventDefault());
 addEventListener("keydown", (e) => {
   wake();
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
   const digit = /^Digit[1-9]$/.test(e.code) ? +e.code.slice(5) : /^Numpad[1-9]$/.test(e.code) ? +e.code.slice(6) : 0;
   if (digit) { e.preventDefault(); padPress(digit, e.shiftKey); return; }
-  const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1], a: [-1, 0], d: [1, 0], w: [0, -1], s: [0, 1] }[e.key];
+  const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1], KeyA: [-1, 0], KeyD: [1, 0], KeyW: [0, -1], KeyS: [0, 1] }[e.code]; // e.code: Shift / Caps Lock don't change it
   if (mv) { e.preventDefault(); me.sel = ((ROW(me.sel) + mv[1] + 9) % 9) * 9 + ((COL(me.sel) + mv[0] + 9) % 9); publish(false); }
-  if (e.key === "p" || e.key === " ") { e.preventDefault(); padPress("pencil"); }
+  if (e.code === "KeyP" || e.code === "Space") { e.preventDefault(); if (!e.repeat) padPress("pencil"); }
   if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") padPress("erase");
 });
 for (const b of $("pickDiff").children) b.onclick = () => { const m = { diff: b.dataset.d }; if (isHost()) applyPick(m); else net.send("pick", m); };
